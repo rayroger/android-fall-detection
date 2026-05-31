@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.h5
+*.pkl
+
+# Datasets (never commit raw data)
+ml_training/data/
+*.csv
+*.txt.gz
+
+# Android
+*.iml
+.gradle/
+local.properties
+android_app/.idea/
+android_app/app/build/
+android_app/captures/
+android_app/.externalNativeBuild/
+android_app/.cxx/
+*.apk
+*.aab
+
+# Model files (generated — add via LFS if needed)
+*.tflite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

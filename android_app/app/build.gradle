@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.falldetection'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.falldetection"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                          'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // Include .tflite assets without compression so TFLite can mmap them
+    aaptOptions {
+        noCompress "tflite"
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
+
+    // TensorFlow Lite
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    implementation 'org.tensorflow:tensorflow-lite-metadata:0.4.4'
+}
