@@ -1,16 +1,16 @@
 """
 Fall Detection Model Training
 ==============================
-Uses SisFall / MobiFall datasets to train a TFLite-compatible model.
-
-Dataset sources:
-  - SisFall:   https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5298771/
-  - MobiFall:  https://bmi.hmu.gr/the-mobifall-and-mobiact-datasets-2/
-  - FallAllD:  https://ieee-dataport.org/open-access/fallalld
+Supports three datasets:
+  - kaggle    : https://www.kaggle.com/datasets/harnoor343/fall-detection-accelerometer-data
+                Columns: Date;Timestamp;DeviceOrientation;AccelerationX;AccelerationY;AccelerationZ;Label
+                Folders: downSit / freeFall / runFall / runSit / walkFall / walkSit
+  - sisfall   : https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5298771/  (requires request)
+  - mobifall  : https://bmi.hmu.gr/the-mobifall-and-mobiact-datasets-2/ (requires request)
 
 Usage:
   pip install -r requirements.txt
-  python train_model.py --dataset sisfall --data_dir ./data/sisfall
+  python train_model.py --dataset kaggle --data_dir ./data/kaggle_fall
 """
 
 import os
@@ -114,6 +114,84 @@ def load_mobifall(data_dir: str) -> pd.DataFrame:
         raise FileNotFoundError(f"No MobiFall data found in {data_dir}. "
                                  "Download from https://bmi.hmu.gr/the-mobifall-and-mobiact-datasets-2/")
     return pd.concat(records, ignore_index=True)
+
+def load_kaggle(data_dir: str) -> pd.DataFrame:
+    """
+    Load Kaggle fall detection dataset.
+
+    Expected folder structure:
+        data_dir/
+            downSit/   downsit1.csv, downsit2.csv, ...   -> label 0 (non-fall)
+            runSit/    ...                               -> label 0
+            walkSit/   ...                               -> label 0
+            freeFall/  ...                               -> label 1 (fall)
+            runFall/   ...                               -> label 1
+            walkFall/  ...                               -> label 1
+
+    CSV columns (semicolon-separated):
+        Date;Timestamp;DeviceOrientation;AccelerationX;AccelerationY;AccelerationZ;Label
+    """
+    FALL_FOLDERS     = {"freefall", "runfall", "walkfall"}
+    NON_FALL_FOLDERS = {"downsit", "runsit", "walksit"}
+
+    records   = []
+    data_path = Path(data_dir)
+
+    folders = [f for f in sorted(data_path.iterdir()) if f.is_dir()]
+    if not folders:
+        raise FileNotFoundError(
+            f"No subfolders found in {data_dir}.\n"
+            "Expected: downSit/, freeFall/, runFall/, runSit/, walkFall/, walkSit/"
+        )
+
+    for folder in folders:
+        folder_key = folder.name.lower()
+        if folder_key in FALL_FOLDERS:
+            is_fall = 1
+        elif folder_key in NON_FALL_FOLDERS:
+            is_fall = 0
+        else:
+            print(f"  Warning: Unknown folder '{folder.name}' -- skipping")
+            continue
+
+        csv_files = list(folder.glob("*.csv"))
+        if not csv_files:
+            print(f"  Warning: No CSV files in {folder.name} -- skipping")
+            continue
+
+        for csv_file in sorted(csv_files):
+            try:
+                df = pd.read_csv(csv_file, sep=";", low_memory=False)
+                df.columns = [c.strip().lower() for c in df.columns]
+                df = df.rename(columns={
+                    "accelerationx": "acc_x",
+                    "accelerationy": "acc_y",
+                    "accelerationz": "acc_z",
+                })
+                df = df[["acc_x", "acc_y", "acc_z"]].copy()
+                df = df.apply(pd.to_numeric, errors="coerce").dropna()
+                if df.empty:
+                    continue
+                # No gyroscope in this dataset -> fill with zeros
+                df["gyr_x"] = 0.0
+                df["gyr_y"] = 0.0
+                df["gyr_z"] = 0.0
+                df["label"]    = is_fall
+                df["activity"] = folder.name
+                df["subject"]  = csv_file.stem
+                records.append(df)
+            except Exception as e:
+                print(f"  Skipping {csv_file.name}: {e}")
+
+    if not records:
+        raise FileNotFoundError(f"No valid CSV data loaded from {data_dir}.")
+
+    combined = pd.concat(records, ignore_index=True)
+    print(f"   Kaggle dataset: {len(combined):,} samples  "
+          f"| falls={combined['label'].sum():,}  "
+          f"non-falls={(combined['label']==0).sum():,}")
+    return combined
+
 
 
 # ── Feature Engineering ───────────────────────────────────────────────────────
@@ -228,14 +306,15 @@ def convert_to_tflite(model: tf.keras.Model, output_path: str,
 
 def main():
     parser = argparse.ArgumentParser(description="Train fall detection model")
-    parser.add_argument("--dataset",  choices=["sisfall","mobifall"], default="sisfall")
+    parser.add_argument("--dataset",  choices=["kaggle","sisfall","mobifall"], default="kaggle")
     parser.add_argument("--data_dir", required=True, help="Path to dataset root")
     parser.add_argument("--epochs",   type=int, default=30)
     parser.add_argument("--output",   default="../android_app/app/src/main/assets")
     args = parser.parse_args()
 
     print(f"\n📂 Loading {args.dataset} from {args.data_dir} …")
-    loader = load_sisfall if args.dataset == "sisfall" else load_mobifall
+    loaders = {"kaggle": load_kaggle, "sisfall": load_sisfall, "mobifall": load_mobifall}
+    loader = loaders[args.dataset]
     df = loader(args.data_dir)
     print(f"   Loaded {len(df):,} raw samples | "
           f"falls={df['label'].sum():,}  non-falls={(df['label']==0).sum():,}")
